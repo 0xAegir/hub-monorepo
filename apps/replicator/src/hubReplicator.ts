@@ -168,6 +168,7 @@ export class HubReplicator {
 	}
       }
     }
+    this.log.info(`Found ${jobs.length} FIDs needing backfilling...`);
     await BackfillFidRegistration.enqueueBulk(jobs);
 
     const startTime = Date.now();
