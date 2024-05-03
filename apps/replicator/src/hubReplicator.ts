@@ -156,10 +156,13 @@ export class HubReplicator {
         batch.push(i);
       }
       const alreadyBackfilled = await this.redis.smismember("backfilled-registrations", ...batch);
+      if (batch.length !== alreadyBackfilled.length) {
+        throw new Error(`Got mismatched result length from smismember. Expected ${batch.length}, got ${alreadyBackfilled.length}`);
+      }
       for (let i = 0; i < alreadyBackfilled.length; i++) {
         if (!alreadyBackfilled[i]) {
           jobs.push({
-            args: { fid: batch[i] },
+            args: { fid: batch[i]! },
             bulkJobOptions: { lifo: true },
           });
 	}
