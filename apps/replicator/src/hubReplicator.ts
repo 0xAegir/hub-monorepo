@@ -143,14 +143,27 @@ export class HubReplicator {
   private async waitForFidRegistrationsBackfill({ maxFid }: { maxFid: number }) {
     this.log.info(`Enqueuing jobs for backfilling FID registrations for ${maxFid} FIDs...`);
 
+    if (await this.redis.scard("backfilled-registrations") >= maxFid) {
+      this.log.info(`Already backfilled registrations for ${maxFid} FIDs.`);
+      return;
+    }
+
     const jobs: Parameters<typeof BackfillFidRegistration.enqueueBulk>[0] = [];
-    for (let fid = maxFid; fid > 0; fid--) {
-      const alreadyBackfilled = await this.redis.sismember("backfilled-registrations", fid);
-      if (alreadyBackfilled) continue;
-      jobs.push({
-        args: { fid },
-        bulkJobOptions: { lifo: true },
-      });
+    for (let batchStart = 1; batchStart <= maxFid; batchStart += 1000) {
+      const batch = [];
+      const batchEnd = Math.min(maxFid, batchStart+1000);
+      for (let i = batchStart; i <= batchEnd; i++) {
+        batch.push(i);
+      }
+      const alreadyBackfilled = await this.redis.smismember("backfilled-registrations", ...batch);
+      for (let i = 0; i < alreadyBackfilled.length; i++) {
+        if (!alreadyBackfilled[i]) {
+          jobs.push({
+            args: { fid: batch[i] },
+            bulkJobOptions: { lifo: true },
+          });
+	}
+      }
     }
     await BackfillFidRegistration.enqueueBulk(jobs);
 
