@@ -62,7 +62,7 @@ export const up = async (db: Kysely<any>) => {
   // Avoids limitations of a monotonic (auto-incrementing) ID.
   await sql`CREATE FUNCTION generate_ulid() RETURNS uuid
     LANGUAGE sql STRICT PARALLEL SAFE
-    RETURN ((lpad(to_hex((floor((EXTRACT(epoch FROM clock_timestamp()) * (1000)::numeric)))::bigint), 12, '0'::text) || encode(public.gen_random_bytes(10), 'hex'::text)))::uuid;
+    RETURN ((lpad(to_hex((floor((EXTRACT(epoch FROM clock_timestamp()) * (1000)::numeric)))::bigint), 12, '0'::text) || encode(gen_random_bytes(10), 'hex'::text)))::uuid;
   `.execute(db);
 
   // CHAIN EVENTS --------------------------------------------------------------------------------
