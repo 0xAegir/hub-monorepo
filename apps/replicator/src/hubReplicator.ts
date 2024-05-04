@@ -13,6 +13,8 @@ import { statsd } from "./statsd.js";
 import { sleep } from "./util.js";
 import { STATSD_HOST } from "./env.js";
 
+const MAX_PAGE_SIZE = 1_000;
+
 export class HubReplicator {
   private eventsSubscriber: HubSubscriber;
   private lastHubEventIdKey: RedisKey;
@@ -149,9 +151,9 @@ export class HubReplicator {
     }
 
     const jobs: Parameters<typeof BackfillFidRegistration.enqueueBulk>[0] = [];
-    for (let batchStart = 1; batchStart <= maxFid; batchStart += 1000) {
+    for (let batchStart = 1; batchStart <= maxFid; batchStart += MAX_PAGE_SIZE) {
       const batch = [];
-      const batchEnd = Math.min(maxFid, batchStart+1000);
+      const batchEnd = Math.min(maxFid, batchStart+MAX_PAGE_SIZE);
       for (let i = batchStart; i <= batchEnd; i++) {
         batch.push(i);
       }
@@ -165,7 +167,7 @@ export class HubReplicator {
             args: { fid: batch[i]! },
             bulkJobOptions: { lifo: true },
           });
-	}
+        }
       }
     }
     this.log.info(`Found ${jobs.length} FIDs needing backfilling...`);
@@ -198,12 +200,23 @@ export class HubReplicator {
 
   private async enqueueBackfillJobs({ maxFid }: { maxFid: number }) {
     this.log.info(`Enqueuing jobs for backfilling data for ${maxFid} FIDs...`);
-    for (let fid = 1; fid <= maxFid; fid++) {
-      // Enqueue one at a time so we allow other job types to be enqueued/processed.
-      // This spreads load better since we write to multiple tables in parallel instead
-      // of a single table. This job will kick off other jobs for fetching different data.
-      await BackfillFidData.enqueue({ fid });
+    // Enqueue MAX_PAGE_SIZE at a time so we allow other job types to be
+    // enqueued/processed. This spreads load better but still allows for bulk
+    // processing and reducing round-trips to redis. This job will kick off
+    // other jobs for fetching different data.
+    const jobs: Parameters<typeof BackfillFidData.enqueueBulk>[0] = [];
+    for (let batchStart = 1; batchStart <= maxFid; batchStart += MAX_PAGE_SIZE) {
+      const batch = [];
+      const batchEnd = Math.min(maxFid, batchStart+MAX_PAGE_SIZE);
+      for (let i = batchStart; i <= batchEnd; i++) {
+        batch.push(i);
+      }
+      jobs.push({
+        args: { fids: batch },
+        bulkJobOptions: { lifo: true },
+      });
     }
+    await BackfillFidData.enqueueBulk(jobs);
   }
 
   private async waitForOtherChainEventsBackfill({ maxFid }: { maxFid: number }) {

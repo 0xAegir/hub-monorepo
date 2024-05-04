@@ -5,17 +5,18 @@ import { processOnChainEvents } from "../processors/index.js";
 
 export const BackfillFidStorageAllocations = registerJob({
   name: "BackfillFidStorageAllocations",
-  run: async ({ fid }: { fid: number }, { db, log, redis, hub }) => {
-    const registrationEvents = getOnChainEventsByFidInBatchesOf(hub, {
-      fid,
-      pageSize: 3_000,
-      eventTypes: [OnChainEventType.EVENT_TYPE_STORAGE_RENT],
-    });
+  run: async ({ fids }: { fids: number[] }, { db, log, redis, hub }) => {
+    for (const fid of fids) {
+      const registrationEvents = getOnChainEventsByFidInBatchesOf(hub, {
+        fid,
+        pageSize: 3_000,
+        eventTypes: [OnChainEventType.EVENT_TYPE_STORAGE_RENT],
+      });
 
-    for await (const events of registrationEvents) {
-      await processOnChainEvents(events, db, log, redis);
+      for await (const events of registrationEvents) {
+        await processOnChainEvents(events, db, log, redis);
+      }
     }
-
-    await redis.sadd("backfilled-storage-allocations", fid);
+    await redis.sadd("backfilled-storage-allocations", ...fids);
   },
 });
